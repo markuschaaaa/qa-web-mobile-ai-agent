@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""qa-board-hook — mirror QA-agent activity onto a Hermes kanban board (display only).
+
+Called by Claude Code hooks (UserPromptSubmit, PreToolUse/PostToolUse on Agent, Stop).
+Only active in sessions started by `qa` (env QA_SESSION=1). One board per project: qa-<project>.
+
+  QA Lead turn starts  → card "qa-lead: <your request>"            (running)
+  role is delegated    → card "<role>: <task description>"         (running)
+  role finishes        → card done, with the role's result summary
+  QA Lead turn ends    → lead card done
+
+The hook returns immediately; Hermes CLI calls run in a detached background process.
+Hermes' dispatcher must not execute these cards: kanban.dispatch_profiles is [] in ~/.hermes/config.yaml.
+"""
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+STATE = Path.home() / ".qa-agent" / "board"
+VAULT = Path(os.environ.get("QA_VAULT", Path.home() / "QA-Vaults" / "work"))
+LOG = STATE / "hook.log"
+CLAIM_TTL = "28800"  # 8 h; cards are closed explicitly long before that
+
+
+def log(msg):
+    STATE.mkdir(parents=True, exist_ok=True)
+    with LOG.open("a") as f:
+        f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+
+
+def project():
+    f = VAULT / ".active"
+    try:
+        return f.read_text().splitlines()[0].strip() or None
+    except (OSError, IndexError):
+        return None
+
+
+def hermes(*args):
+    r = subprocess.run(["hermes", "kanban", *args], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        log(f"hermes kanban {' '.join(args[:3])} failed: {(r.stderr or r.stdout).strip()[:300]}")
+    return r
+
+
+def ensure_board(board, proj):
+    marker = STATE / f"board-{board}"
+    if marker.exists():
+        return
+    if board not in hermes("boards", "list").stdout:
+        hermes("boards", "create", board, "--name", f"QA · {proj}",
+               "--description", "Live view of the QA agent team (display only)")
+    marker.touch()
+
+
+def key_file(key):
+    return STATE / "cards" / hashlib.sha1(key.encode()).hexdigest()
+
+
+def open_card(board, key, title, assignee, body):
+    out = hermes("--board", board, "create", title[:150], "--assignee", assignee,
+                 "--created-by", "qa-lead", "--idempotency-key", key[:200],
+                 "--body", body[:4000] or title, "--json").stdout
+    try:
+        task_id = json.loads(out[out.index("{"):])["id"]
+    except (ValueError, KeyError):
+        log(f"could not parse card id for {title[:60]}")
+        return
+    hermes("--board", board, "claim", task_id, "--ttl", CLAIM_TTL)
+    kf = key_file(key)
+    kf.parent.mkdir(parents=True, exist_ok=True)
+    kf.write_text(f"{board} {task_id}")
+
+
+def close_card(key, result, failed=False):
+    kf = key_file(key)
+    for _ in range(40):  # the create may still be running in a sibling process
+        if kf.exists():
+            break
+        time.sleep(0.5)
+    else:
+        return
+    board, task_id = kf.read_text().split()
+    if failed:
+        hermes("--board", board, "block", task_id, "--kind", "needs_input", result[:500] or "failed")
+    else:
+        hermes("--board", board, "complete", task_id, "--force", "--result", result[:1500] or "done")
+    kf.unlink(missing_ok=True)
+
+
+def text_of(resp):
+    """Best-effort plain text from an Agent tool_response."""
+    if isinstance(resp, str):
+        return resp
+    if isinstance(resp, dict):
+        for k in ("result", "content", "text", "output"):
+            if k in resp:
+                return text_of(resp[k])
+        return json.dumps(resp, ensure_ascii=False)[:1500]
+    if isinstance(resp, list):
+        return "\n".join(text_of(x) for x in resp)
+    return str(resp)
+
+
+def work(ev):
+    proj = project()
+    if not proj:
+        return
+    board = f"qa-{proj}"
+    name = ev.get("hook_event_name")
+    sid = ev.get("session_id", "nosession")
+    lead_key_file = STATE / f"lead-{sid}"
+
+    if name == "UserPromptSubmit":
+        prompt = (ev.get("prompt") or "").strip()
+        if not prompt or prompt.startswith("/"):
+            return
+        ensure_board(board, proj)
+        key = f"lead:{sid}:{time.time():.0f}"
+        lead_key_file.write_text(key)
+        first = prompt.splitlines()[0]
+        open_card(board, key, f"qa-lead: {first[:110]}", "qa-lead", prompt)
+
+    elif name == "Stop":
+        if lead_key_file.exists():
+            key = lead_key_file.read_text().strip()
+            lead_key_file.unlink()
+            close_card(key, "Turn finished — see the session for details.")
+
+    elif name in ("PreToolUse", "PostToolUse") and ev.get("tool_name") in ("Agent", "Task"):
+        ti = ev.get("tool_input") or {}
+        role = ti.get("subagent_type") or "general-purpose"
+        desc = ti.get("description") or "task"
+        key = "agent:" + (ev.get("tool_use_id") or f"{sid}:{role}:{desc}")
+        if name == "PreToolUse":
+            ensure_board(board, proj)
+            open_card(board, key, f"{role}: {desc}", role, ti.get("prompt") or desc)
+        else:
+            resp = ev.get("tool_response")
+            failed = isinstance(resp, dict) and bool(resp.get("is_error") or resp.get("error"))
+            close_card(key, text_of(resp).strip(), failed=failed)
+
+
+def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "_work":
+        try:
+            work(json.loads(Path(sys.argv[2]).read_text()))
+        except Exception as e:  # never let display problems surface in the agent session
+            log(f"error: {e!r}")
+        finally:
+            Path(sys.argv[2]).unlink()
+        return
+    if os.environ.get("QA_SESSION") != "1":
+        return
+    raw = sys.stdin.read()
+    STATE.mkdir(parents=True, exist_ok=True)
+    payload = STATE / f"ev-{time.time_ns()}.json"
+    payload.write_text(raw)
+    subprocess.Popen([sys.executable, os.path.abspath(__file__), "_work", str(payload)],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, env={**os.environ})
+
+
+if __name__ == "__main__":
+    main()

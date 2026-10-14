@@ -1,0 +1,4 @@
+name: qa-notes
+version: 1.0.0
+description: "/note <text> — file a note into the active QA project's vault inbox. Deterministic: no LLM, no shell; only creates new files in <vault>/projects/<active>/inbox/."
+author: qa-agent

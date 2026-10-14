@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# qa-digest [--dry-run] [project]
+# Builds a short status digest from the vault and sends it to Telegram via `hermes send`.
+# Read-only on the vault, no LLM, one-way (Mac → phone). Schedule it with launchd / cron.
+set -euo pipefail
+
+QA_VAULT="${QA_VAULT:-$HOME/QA-Vaults/work}"
+TARGET="${QA_NOTIFY_TARGET:-telegram}"
+dry=0; [[ "${1:-}" == "--dry-run" ]] && { dry=1; shift; }
+proj="${1:-$(head -n1 "$QA_VAULT/.active" 2>/dev/null || true)}"
+P="$QA_VAULT/projects/$proj"
+[[ -n "$proj" && -d "$P" ]] || { echo "No active project."; exit 1; }
+
+count() { find "$1" -type f -name "*.md" 2>/dev/null | wc -l | tr -d ' '; }
+latest_run="$(ls -t "$P"/runs/*.md 2>/dev/null | grep -v '/flaky.md$' | head -1 || true)"
+questions="$(grep -rho '\[!question\]' "$P" --include=*.md 2>/dev/null | wc -l | tr -d ' ')"
+changed="$(find "$P" -type f -name '*.md' -mtime -1 2>/dev/null | sed "s|$P/||" | head -8)"
+
+{
+  echo "📋 QA digest — $proj — $(date '+%d.%m. %H:%M')"
+  echo
+  if [[ -n "$latest_run" ]]; then
+    echo "▶ Last run: $(basename "$latest_run" .md)"
+    # First non-frontmatter lines of the run summary (triage writes totals at the top).
+    awk 'BEGIN{fm=0} /^---$/{fm++; next} fm!=1' "$latest_run" | grep -v '^\s*$' | head -8
+  else
+    echo "▶ No run summaries yet"
+  fi
+  echo
+  echo "🐞 Bug drafts awaiting review: $(count "$P/bugs/drafts")"
+  echo "❓ Open questions in vault: $questions"
+  [[ -f "$P/runs/flaky.md" ]] && echo "🌀 Flaky list: $(grep -c '^|' "$P/runs/flaky.md" 2>/dev/null || echo 0) rows"
+  if [[ -n "$changed" ]]; then
+    echo
+    echo "📝 Changed in last 24h:"
+    echo "$changed" | sed 's/^/• /'
+  fi
+} > "${TMPDIR:-/tmp}/qa-digest.$$"
+
+if (( dry )); then
+  cat "${TMPDIR:-/tmp}/qa-digest.$$"
+else
+  hermes send -q -t "$TARGET" -f "${TMPDIR:-/tmp}/qa-digest.$$" && echo "Digest sent to $TARGET."
+fi
+rm -f "${TMPDIR:-/tmp}/qa-digest.$$"

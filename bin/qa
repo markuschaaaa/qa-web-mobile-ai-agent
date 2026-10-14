@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# qa — launcher for the QA agent team (Claude Code + Obsidian vault)
+#
+#   qa                   open the QA Lead (or re-attach if it is already running)
+#   qa "<task>"          open the QA Lead with a first task
+#   qa resume            continue the last conversation
+#   qa attach            re-attach to the running session (after closing the terminal)
+#   qa stop              end the running session
+#   qa here [...]        run in this terminal without tmux (closes with the window)
+#   qa -p "<task>"       run one task headless and print the result
+#   qa omni [...]        like `qa`, routed through OmniRoute (only llm_policy: any)
+#   qa new <name>        create a project in the vault and make it active
+#   qa use <name>        switch the active project
+#   qa status            vault, active project, policy, session state
+#
+# Sessions run in tmux (session "qa"): closing the terminal window does NOT stop the work.
+# Remote Control is on, so the session also shows up in the Claude app (phone/desktop).
+set -euo pipefail
+
+QA_VAULT="${QA_VAULT:-$HOME/QA-Vaults/work}"
+OMNIROUTE_URL="${OMNIROUTE_URL:-http://localhost:20128}"
+TMUX_SESSION="qa"
+export QA_VAULT
+export QA_SESSION=1   # enables the Hermes board hook (qa-board-hook) for sessions started here
+
+active() { [[ -f "$QA_VAULT/.active" ]] && head -n1 "$QA_VAULT/.active" || true; }
+
+policy() {
+  local p; p="$(active)"
+  [[ -n "$p" && -f "$QA_VAULT/projects/$p/PROJECT.md" ]] || { echo "unknown"; return; }
+  grep -m1 -E '^[[:space:]]*-?[[:space:]]*llm_policy:' "$QA_VAULT/projects/$p/PROJECT.md" | sed -E 's/.*llm_policy:[[:space:]]*([a-z-]+).*/\1/'
+}
+
+running() { command -v tmux >/dev/null && tmux has-session -t "$TMUX_SESSION" 2>/dev/null; }
+
+attach() {
+  if [[ -n "${TMUX:-}" ]]; then tmux switch-client -t "$TMUX_SESSION"; else exec tmux attach -t "$TMUX_SESSION"; fi
+}
+
+# Build the claude command line for an interactive QA Lead session.
+claude_cmd() {
+  local cmd=(caffeinate -i claude --agent qa-lead --remote-control "qa-$(active)")
+  if [[ "${1:-}" == "--continue" ]]; then cmd+=(--continue); shift; fi
+  [[ $# -gt 0 ]] && cmd+=("$*")
+  printf '%q ' "${cmd[@]}"
+}
+
+start_session() {
+  # $1 = extra env assignments (may be empty), rest = claude_cmd args
+  local envs="$1"; shift
+  if running; then
+    echo "A QA session is already running — attaching. (End it with: qa stop)"
+    sleep 1; attach
+  fi
+  local cmd; cmd="$(claude_cmd "$@")"
+  if ! command -v tmux >/dev/null; then
+    cd "$QA_VAULT"; eval "$envs exec $cmd"
+  fi
+  tmux new-session -d -s "$TMUX_SESSION" -c "$QA_VAULT" -e "QA_VAULT=$QA_VAULT" -e "QA_SESSION=1" "$envs $cmd"
+  tmux set-option -t "$TMUX_SESSION" mouse on >/dev/null
+  attach
+}
+
+case "${1:-}" in
+  new)
+    name="${2:?usage: qa new <name>}"
+    [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Use letters, digits, . _ - only."; exit 1; }
+    dir="$QA_VAULT/projects/$name"
+    [[ -e "$dir" ]] && { echo "Project '$name' already exists."; exit 1; }
+    mkdir -p "$dir"/{domain/rules,domain/states,meetings/raw,stories,testcases/export,app-map/screens,app-map/flows,app-map/screenshots,strategy,plans,automation,runs,bugs/drafts,decisions,inbox}
+    sed "s/<name>/$name/g; s/<Project name>/$name/g; s/<YYYY-MM-DD>/$(date +%F)/g" \
+      "$QA_VAULT/_system/templates/PROJECT.md" > "$dir/PROJECT.md"
+    echo "# App map — $name" > "$dir/app-map/index.md"
+    echo "$name" > "$QA_VAULT/.active"
+    echo "Created and activated '$name' → $dir"
+    echo "Next: run 'qa' and say: onboard this project"
+    ;;
+  use)
+    name="${2:?usage: qa use <name>}"
+    [[ -d "$QA_VAULT/projects/$name" ]] || { echo "No project '$name'. Existing:"; ls "$QA_VAULT/projects"; exit 1; }
+    echo "$name" > "$QA_VAULT/.active"
+    echo "Active project: $name"
+    ;;
+  status)
+    echo "Vault:    $QA_VAULT"
+    echo "Project:  $(active || echo '-')"
+    echo "Policy:   $(policy)"
+    echo "Projects: $(ls "$QA_VAULT/projects" 2>/dev/null | tr '\n' ' ')"
+    if running; then echo "Session:  running (qa attach)"; else echo "Session:  none"; fi
+    ;;
+  attach)
+    running || { echo "No QA session running. Start one with: qa   (or continue the last: qa resume)"; exit 1; }
+    attach
+    ;;
+  stop)
+    running && tmux kill-session -t "$TMUX_SESSION" && echo "QA session ended." || echo "No QA session running."
+    ;;
+  resume)
+    start_session "" --continue
+    ;;
+  here)
+    shift; cd "$QA_VAULT"
+    if [[ $# -gt 0 ]]; then exec claude --agent qa-lead "$*"; else exec claude --agent qa-lead; fi
+    ;;
+  -p)
+    shift; cd "$QA_VAULT"
+    exec claude --agent qa-lead -p "$*"
+    ;;
+  omni)
+    shift
+    if [[ "$(policy)" != "any" ]]; then
+      echo "Refusing: active project '$(active)' has llm_policy '$(policy)'."
+      echo "Its data may only go to Claude directly. Use 'qa' instead, or switch project."
+      exit 2
+    fi
+    : "${OMNIROUTE_API_KEY:?set OMNIROUTE_API_KEY (from the OmniRoute dashboard) in ~/.zshrc}"
+    curl -fsS -o /dev/null --max-time 3 "$OMNIROUTE_URL" || { echo "OmniRoute not reachable at $OMNIROUTE_URL"; exit 3; }
+    start_session "ANTHROPIC_BASE_URL=$(printf %q "$OMNIROUTE_URL") ANTHROPIC_AUTH_TOKEN=$(printf %q "$OMNIROUTE_API_KEY")" "$@"
+    ;;
+  -h|--help|help)
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    start_session "" "$@"
+    ;;
+esac
