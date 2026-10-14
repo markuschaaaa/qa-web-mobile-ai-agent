@@ -100,3 +100,18 @@ Every role ends with a block the next role (or the user) can act on:
 ## 8. Verify before "done"
 
 Code → it compiles and the affected tests ran (green, or red with triage). Docs → links resolve, every TC traces to an AC or rule. Never report success you have not observed.
+
+## 9. Specialist skills — load when the task touches them
+
+| Skill | Load when | Main users |
+|---|---|---|
+| `test-design` | designing test cases, reviewing AC | test-designer |
+| `xray-export` | Xray CSV / Gherkin | test-designer |
+| `api-testing` | any endpoint, contract, backend check | test-designer, automator, test-strategist |
+| `mobile-network` | offline, sync, network switching, slow networks | test-designer, explorer, automator |
+| `accessibility` | a11y, WCAG, screen readers, new screens | explorer, test-designer, automator |
+| `test-data` | a test needs data, tests interfere, env preparation | test-designer, automator |
+| `flaky-quarantine` | passes on rerun, CI-only failures, unstable suites | triage, automator |
+| `stack-<id>` | writing or running code in a repo of that stack | automator, explorer |
+
+If the `qa-mobile` MCP is available, use it for mobile page sources: `capture_android`, `rank_locators`, `screen_to_markdown`, `generate_page_object`, `diff_screens`.

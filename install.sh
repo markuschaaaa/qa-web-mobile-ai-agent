@@ -6,7 +6,12 @@ set -euo pipefail
 QA_HOME="$(cd "$(dirname "$0")" && pwd)"
 QA_VAULT="${QA_VAULT:-$HOME/QA-Vaults/work}"
 
-mkdir -p "$HOME/.claude/agents" "$HOME/.claude/skills" "$HOME/.local/bin"
+mkdir -p "$HOME/.claude/agents" "$HOME/.claude/skills" "$HOME/.claude/commands" "$HOME/.local/bin"
+
+for f in "$QA_HOME"/commands/*.md; do
+  ln -sfn "$f" "$HOME/.claude/commands/$(basename "$f")"
+  echo "cmd    → /$(basename "$f" .md)"
+done
 
 for f in "$QA_HOME"/agents/*.md; do
   ln -sfn "$f" "$HOME/.claude/agents/$(basename "$f")"
