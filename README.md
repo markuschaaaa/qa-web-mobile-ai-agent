@@ -24,7 +24,9 @@ You ──► QA Lead ──► Business Analyst · Test Strategist · Test Desi
 | **Test design** | Review AC for gaps, design test cases with EP, BVA, decision tables, state transitions, pairwise; Xray CSV / Gherkin export |
 | **Exploration** | Walk the web app (Playwright) or mobile app (Appium, Android & iOS) on dev/qa, record screens, flows, stable locators, exploratory findings |
 | **Automation** | Write tests that follow the repo's own conventions, using only verified locators; run them until green (3× for flakiness); local branch + commit |
-| **Triage** | Group failures by root cause, classify product bug / test defect / flaky / environment, draft bug reports, run summaries |
+| **Triage** | Group failures by root cause, classify product bug / test defect / flaky / environment, draft bug reports, run summaries, flaky quarantine with ticket/owner/expiry |
+| **Specialist testing** | API (contract-first REST/GraphQL), offline & bad-network mobile testing, accessibility (WCAG 2.2, EAA), test data strategy |
+| **Mobile locators** | Own Kotlin MCP server ([`mcp/qa-mobile`](mcp/qa-mobile/README.md)): capture a screen, rank locators by stability, a11y findings, app-map notes, Kotlin page objects, build-to-build screen diff |
 | **Phone** | Follow and steer sessions in the Claude app; Telegram digest every morning, `/note` into the project inbox, read-only status commands, live agent board |
 
 ---
@@ -42,6 +44,21 @@ You ──► QA Lead ──► Business Analyst · Test Strategist · Test Desi
 | **triage** | Failure analyst | `runs/`, `runs/flaky.md`, `bugs/drafts/` |
 
 Each role is a Claude Code subagent (`agents/*.md`). All roles share one constitution: [`skills/qa-core`](skills/qa-core/SKILL.md).
+
+### Skills the roles load on demand
+
+| Skill | Covers |
+|---|---|
+| `qa-core` | constitution: memory, approval gates, evidence, confidence gate, handoff, which skill when |
+| `qa-onboard` | onboarding a project, stack detection, adapter generation |
+| `test-design` | EP, BVA, decision tables, state transition, pairwise, AC review, minimisation |
+| `xray-export` | Xray Manual CSV + Gherkin, project-specific mapping |
+| `api-testing` | contract-first REST/GraphQL, coverage matrix, Playwright / REST Assured implementation |
+| `mobile-network` | offline, sync, network switching, throttling — adb / emulator / Appium / iOS commands |
+| `accessibility` | WCAG 2.2 AA, axe-core for web, mobile labels / touch targets / text scaling / dark mode |
+| `test-data` | factories vs static sets vs seeding, isolation, cleanup, synthetic German data, no PII |
+| `flaky-quarantine` | detection by reruns, root-cause taxonomy, quarantine contract, JUnit5 / Playwright mechanics |
+| `stack-appium-kotlin` · `stack-playwright-ts` | stack adapters — how to work in a repo of that stack |
 
 ---
 
@@ -99,6 +116,7 @@ macOS (Apple Silicon tested). Everything except Claude Code is optional, dependi
 | Java 17+ & Android SDK (`adb`, emulator) | Android | Android Studio |
 | Appium 3 + drivers | mobile automation/exploration | `npm i -g appium` · `appium driver install uiautomator2` · `appium driver install xcuitest` |
 | Appium MCP | mobile exploration | `claude mcp add -s user appium -- npx -y appium-mcp@1.95.8` |
+| qa-mobile MCP (this repo) | locator ranking, screen notes, page objects | built and registered by `install.sh` (JDK 17+) — see [mcp/qa-mobile](mcp/qa-mobile/README.md) |
 | Xcode (+ iOS simulator runtime) | iOS | App Store, then `sudo xcodebuild -license accept` · `xcodebuild -downloadPlatform iOS` |
 | ffmpeg + whisper.cpp + model | local meeting transcription | `brew install ffmpeg whisper-cpp` + model below |
 | Hermes Agent | Telegram: digest, notes, live board | <https://hermes-agent.nousresearch.com> |
@@ -123,7 +141,8 @@ cd ~/qa-agent
 
 `install.sh` is idempotent (safe to re-run after every change). It:
 
-- links the roles into `~/.claude/agents` and the skills into `~/.claude/skills` (global, every project);
+- links the roles into `~/.claude/agents`, the skills into `~/.claude/skills` and the `/qa-*` commands into `~/.claude/commands` (global, every project);
+- builds the `qa-mobile` MCP server (if Java is installed) and registers it with `claude mcp add -s user`;
 - links the CLIs (`qa`, `qa-transcribe`, `qa-digest`, `qa-board-hook`) into `~/.local/bin`;
 - adds Claude Code hooks (live board) and "ask before push/MR" permission rules to `~/.claude/settings.json`;
 - creates the vault at `~/QA-Vaults/work` (or `$QA_VAULT`), refreshing templates on later runs — project data is never touched;
@@ -194,6 +213,19 @@ It reads the repo rules, detects the stack, asks only what it can't discover, fi
 | Plan / strategy | `Test plan for release 2.4 with these stories: …` · `Create the test strategy` |
 | Phone notes | Telegram `/note …` → later `Process the inbox` |
 
+### Slash commands (inside a `qa` / Claude Code session)
+
+| Command | Does |
+|---|---|
+| `/qa-story <KEY> <AC or file>` | business rules + questions → test cases + Xray → stops for your OK → automation |
+| `/qa-meeting <file> [de\|en\|ru]` | local transcription → decisions, rules, action items, questions |
+| `/qa-explore <area> [web\|android\|ios]` | map screens, flows, locators into the app map |
+| `/qa-automate <TC ids>` | automate following repo conventions, run 3×, update coverage |
+| `/qa-triage [results path]` | group, classify, bug drafts, flaky list, phone-sized summary |
+| `/qa-bug <observation>` | reproduce + evidence → bug draft (filed only after approval) |
+| `/qa-plan <scope>` · `/qa-release <version>` | test plan · release readiness verdict |
+| `/qa-inbox` · `/qa-status` | process the inbox · project status and next steps |
+
 ### Commands
 
 | Command | |
@@ -225,13 +257,21 @@ Hermes dashboard → **Kanban → board `QA · <project>`** (`hermes dashboard`,
 
 ```
 agents/                 7 roles (Claude Code subagents)
+commands/               /qa-* slash commands
 skills/
   qa-core/              constitution: memory, approval gates, evidence, confidence, handoff
   qa-onboard/           project onboarding → PROJECT.md, stack detection, adapter generation
   test-design/          EP, BVA, decision tables, state transition, pairwise, AC review
   xray-export/          Xray CSV + Gherkin
+  api-testing/          contract-first API testing
+  mobile-network/       offline / network conditions for mobile
+  accessibility/        WCAG 2.2 web + mobile a11y
+  test-data/            data sources, isolation, synthetic data
+  flaky-quarantine/     flaky detection, classification, quarantine
   stack-appium-kotlin/  adapter: Kotlin + Appium + JUnit5 (+ Allure, Sauce Labs)
   stack-playwright-ts/  adapter: Playwright + TypeScript
+mcp/
+  qa-mobile/            Kotlin MCP server: capture, rank locators, screen notes, page objects, diff
 bin/
   qa                    launcher (tmux, Remote Control, projects, OmniRoute guard)
   qa-transcribe         whisper.cpp wrapper

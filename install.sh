@@ -78,6 +78,17 @@ rm -f "$plist"
 sed "s|__HOME__|$HOME|g" "$QA_HOME/launchd/com.qa-agent.digest.plist.template" > "$plist"
 launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null && echo "launchd → digest weekdays 08:00" || echo "launchd → could not load $plist"
 
+# qa-mobile MCP (Kotlin): build once if Java is available, register globally in Claude Code.
+mcp_bin="$QA_HOME/mcp/qa-mobile/build/install/qa-mobile-mcp/bin/qa-mobile-mcp"
+if [[ ! -x "$mcp_bin" ]] && command -v java >/dev/null; then
+  echo "mcp    → building qa-mobile (first time takes a few minutes)…"
+  (cd "$QA_HOME/mcp/qa-mobile" && ./gradlew -q installDist) || echo "mcp    ! build failed — run: cd mcp/qa-mobile && ./gradlew installDist"
+fi
+if [[ -x "$mcp_bin" ]] && command -v claude >/dev/null; then
+  claude mcp get qa-mobile >/dev/null 2>&1 || claude mcp add -s user qa-mobile -- "$mcp_bin" >/dev/null
+  echo "mcp    → qa-mobile registered (claude mcp get qa-mobile)"
+fi
+
 if [[ ! -d "$QA_VAULT" ]]; then
   mkdir -p "$QA_VAULT"
   cp -R "$QA_HOME/vault-template/." "$QA_VAULT/"

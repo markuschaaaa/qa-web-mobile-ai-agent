@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AppiumAUT>
+  <XCUIElementTypeApplication type="XCUIElementTypeApplication" name="Demo Shop" label="Demo Shop" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852">
+    <XCUIElementTypeWindow type="XCUIElementTypeWindow" enabled="true" visible="true" accessible="false" x="0" y="0" width="393" height="852">
+      <XCUIElementTypeStaticText type="XCUIElementTypeStaticText" value="Anmelden" name="Anmelden" label="Anmelden" enabled="true" visible="true" accessible="true" x="24" y="100" width="345" height="40"/>
+      <XCUIElementTypeTextField type="XCUIElementTypeTextField" name="email_field" label="E-Mail" enabled="true" visible="true" accessible="true" x="24" y="180" width="345" height="48"/>
+      <XCUIElementTypeSecureTextField type="XCUIElementTypeSecureTextField" label="Passwort" enabled="true" visible="true" accessible="true" x="24" y="244" width="345" height="48"/>
+      <XCUIElementTypeButton type="XCUIElementTypeButton" name="login_button" label="Anmelden" enabled="true" visible="true" accessible="true" x="24" y="320" width="345" height="50"/>
+      <XCUIElementTypeButton type="XCUIElementTypeButton" label="" enabled="true" visible="true" accessible="true" x="350" y="50" width="30" height="30"/>
+      <XCUIElementTypeButton type="XCUIElementTypeButton" name="Hidden" label="Hidden" enabled="true" visible="false" accessible="true" x="0" y="900" width="100" height="50"/>
+    </XCUIElementTypeWindow>
+  </XCUIElementTypeApplication>
+</AppiumAUT>

@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.widget.FrameLayout" package="com.example.demoshop" content-desc="" clickable="false" bounds="[0,0][1080,2400]">
+    <node index="0" text="Anmelden" resource-id="com.example.demoshop:id/title" class="android.widget.TextView" package="com.example.demoshop" content-desc="" clickable="false" bounds="[48,200][1032,300]" />
+    <node index="1" text="" resource-id="com.example.demoshop:id/email" class="android.widget.EditText" package="com.example.demoshop" content-desc="E-Mail" clickable="true" bounds="[48,400][1032,540]" />
+    <node index="2" text="" resource-id="com.example.demoshop:id/password" class="android.widget.EditText" package="com.example.demoshop" content-desc="" clickable="true" bounds="[48,580][1032,720]" />
+    <node index="3" text="Anmelden" resource-id="com.example.demoshop:id/login_button" class="android.widget.Button" package="com.example.demoshop" content-desc="login_button" clickable="true" bounds="[48,800][1032,940]" />
+    <node index="4" text="Passwort vergessen?" resource-id="" class="android.widget.TextView" package="com.example.demoshop" content-desc="" clickable="true" bounds="[48,980][600,1040]" />
+    <node index="5" text="" resource-id="com.example.demoshop:id/0x7f0a0123" class="android.widget.ImageButton" package="com.example.demoshop" content-desc="" clickable="true" bounds="[980,40][1040,100]" />
+    <node index="6" text="Zuletzt angemeldet 12.10.2026 08:15" resource-id="" class="android.widget.TextView" package="com.example.demoshop" content-desc="" clickable="false" bounds="[48,1100][1032,1160]" />
+    <node index="7" text="Hilfe" resource-id="" class="android.widget.Button" package="com.example.demoshop" content-desc="" clickable="true" bounds="[48,1200][500,1340]" />
+    <node index="8" text="Hilfe" resource-id="" class="android.widget.Button" package="com.example.demoshop" content-desc="" clickable="true" bounds="[540,1200][1032,1340]" />
+  </node>
+</hierarchy>
+UI hierchary dumped to: /dev/tty
