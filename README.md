@@ -180,7 +180,7 @@ Use a local model or an API key with a spending limit for Hermes — not your Cl
 
 ## Use
 
-Full walkthrough: **[GETTING-STARTED.md](GETTING-STARTED.md)**.
+Full walkthrough: **[GETTING-STARTED.md](GETTING-STARTED.md)**. New machine or second job from zero: **[docs/NEW-MACHINE.md](docs/NEW-MACHINE.md)** + `scripts/bootstrap-macos.sh`.
 
 ### Connect a project (once)
 
